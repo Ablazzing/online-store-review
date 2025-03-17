@@ -1,21 +1,36 @@
 package OnlineStoreWemalpa.com.OnlineStore.controller;
 
-import OnlineStoreWemalpa.com.OnlineStore.model.*;
+import OnlineStoreWemalpa.com.OnlineStore.model.Material;
+import OnlineStoreWemalpa.com.OnlineStore.model.Order;
+import OnlineStoreWemalpa.com.OnlineStore.model.PrintType;
+import OnlineStoreWemalpa.com.OnlineStore.model.Product;
+import OnlineStoreWemalpa.com.OnlineStore.model.ProductImage;
+import OnlineStoreWemalpa.com.OnlineStore.model.ProductSize;
+import OnlineStoreWemalpa.com.OnlineStore.model.User;
 import OnlineStoreWemalpa.com.OnlineStore.repository.ProductSizeRepository;
 import OnlineStoreWemalpa.com.OnlineStore.repository.UserRepository;
-import OnlineStoreWemalpa.com.OnlineStore.service.*;
+import OnlineStoreWemalpa.com.OnlineStore.service.FileUploadService;
+import OnlineStoreWemalpa.com.OnlineStore.service.MaterialService;
+import OnlineStoreWemalpa.com.OnlineStore.service.OrderService;
+import OnlineStoreWemalpa.com.OnlineStore.service.PrintTypeService;
+import OnlineStoreWemalpa.com.OnlineStore.service.ProductService;
+import OnlineStoreWemalpa.com.OnlineStore.service.UserService;
 import lombok.AllArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 @Controller
 @RequestMapping("/api/v1/admin")
@@ -95,57 +110,55 @@ public class AdminController {
     }
 
     @GetMapping("/product-create")
-    public String showCreateProductForm(Model model) {
-        model.addAttribute("product", new Product()); // Добавляем пустого пользователя в модель
+    public String showCreateProductForm() {
         return "product-create"; // Отображаем форму для создания нового пользователя
     }
 
     // Обработка формы создания нового пользователя
-    @PostMapping("/product-create")
+    @PostMapping(value = "/product-create")
     public String createProduct(
-            @ModelAttribute Product product,
-            @RequestParam("images") List<MultipartFile> images,
-            @RequestParam(value = "sizes", required = false) List<String> sizes,
-            RedirectAttributes redirectAttributes) {
-
+             @ModelAttribute ProductFormDto formData,
+             RedirectAttributes redirectAttributes) {
         try {
-            // Загружаем изображения и создаем объекты ProductImage
-            List<ProductImage> productImages = new ArrayList<>();
-            for (MultipartFile file : images) {
-                if (!file.isEmpty()) {
-                    String imageUrl = fileUploadService.uploadFile(file);
-                    ProductImage productImage = new ProductImage();
-                    productImage.setImageUrl(imageUrl);
-                    productImage.setProduct(product); // Устанавливаем продукт для изображения
-                    productImage.setIsPrimary(false);  // По умолчанию ставим, что это не главное изображение
-                    productImages.add(productImage);
-                }
-            }
-
-            // Преобразуем размеры из строки в объекты ProductSize
-            List<ProductSize> productSizes = new ArrayList<>();
-            if (sizes != null) {
-                for (String size : sizes) {
-                    ProductSize productSize = new ProductSize();
-                    productSize.setSize(size); // Устанавливаем размер
-                    productSize.setProduct(product); // Устанавливаем продукт для размера
-                    productSizes.add(productSize);
-                }
-            }
-
-            // Устанавливаем список изображений и размеров в продукт
-            product.setImages(productImages);
-            product.setSizes(productSizes);
-
-            // Сохраняем продукт с изображениями и размерами
+            Product product = createProduct(formData);
+            saveImages(formData.getImages(), product);
             service.saveProductWithImagesAndSizes(product);
-
             redirectAttributes.addFlashAttribute("success", "Товар успешно создан!");
         } catch (Exception e) {
             redirectAttributes.addFlashAttribute("error", "Ошибка при создании товара: " + e.getMessage());
         }
-
         return "redirect:/api/v1/admin/product-admin";
+    }
+
+    private void saveImages(List<MultipartFile> images, Product product) {
+        List<ProductImage> productImages = new ArrayList<>();
+        for (MultipartFile file : images) {
+            if (!file.isEmpty()) {
+                String imageUrl = fileUploadService.uploadFile(file);
+                ProductImage productImage = new ProductImage();
+                productImage.setImageUrl(imageUrl);
+                productImage.setProduct(product); // Устанавливаем продукт для изображения
+                productImage.setIsPrimary(false);  // По умолчанию ставим, что это не главное изображение
+                productImages.add(productImage);
+            }
+        }
+        product.setImages(productImages);
+    }
+
+    private Product createProduct(ProductFormDto formData) {
+        Product product = new Product();
+        product.setName(formData.getName());
+        product.setDescription(formData.getDescription());
+        product.setClothingType(formData.getClothingType());
+        product.setPrice(formData.getPrice());
+
+        // Преобразуем размеры из строки в объекты ProductSize
+        List<ProductSize> productSizes = Optional.ofNullable(formData.getSizes()).orElse(new ArrayList<>())
+                .stream()
+                .map(size -> new ProductSize(product, size))
+                .toList();
+        product.setSizes(productSizes);
+        return product;
     }
 
     @GetMapping("/order-admin")
